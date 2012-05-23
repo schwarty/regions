@@ -1,0 +1,3 @@
+recursive-include regions *.xml *.nii.gz *.py
+include *.py
+include README.rst
