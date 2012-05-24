@@ -23,23 +23,21 @@ def resample(source, target, interpolation='continuous'):
 
 class Atlas(object):
 
-    def __init__(self, A, affine, label_map=None, null_label=0):
+    def __init__(self, A, affine, label_map=None):
         self.A = A
         self.affine = affine
-        self.null_label = null_label
         self.label_map = label_map
         if len(A.shape) == 3:   # single region in atlas
             self.A = A[..., None]
-        self.mask = (A != null_label).sum(3).astype('bool')
+        self.mask = (A != 0.).sum(3).astype('bool')
         self.shape = self.A.shape[:-1]
         self.size = self.A.shape[-1]
 
         if self.A.dtype.name != 'bool':
             self.A = self.A.astype('float32')
 
-        
     def labels(self):
-        return range(self.size + 1)[1:]
+        return range(self.size)
 
     def names(self):
         if self.label_map is None:
@@ -60,8 +58,7 @@ class Atlas(object):
         nX = np.zeros((X.shape[0], self.size))
 
         for i, region in enumerate(A):
-            R_mask = np.logical_and(
-                (region != self.null_label).astype('bool'), mask_)
+            R_mask = np.logical_and((region != 0.).astype('bool'), mask_)
             if weight_func is not None:
                 R_val = weight_func(region[R_mask], X[:, R_mask[mask_]])
             else:
@@ -80,7 +77,7 @@ class Atlas(object):
 
         for i, region in enumerate(self.A_):
             R_mask = np.logical_and(
-                (region != self.null_label).astype('bool'), self.mask_)
+                (region != 0.).astype('bool'), self.mask_)
             nX[:, R_mask[self.mask_]] += X[:, i, None]
 
         return nX
@@ -97,7 +94,7 @@ class Atlas(object):
             if np.any(np.isnan(array)):
                 mask = array != np.nan
             else:
-                mask = array != self.null_label
+                mask = array != 0
 
         X = self.project(array[mask][None, :],
                          affine, mask, pooling_func, weight_func)
@@ -124,8 +121,7 @@ class Atlas(object):
             label = i + 1
             R_val = np.zeros((X.shape[0], region.size))
 
-            R_mask = np.logical_and(
-                (region != self.null_label).astype('bool'), mask_)
+            R_mask = np.logical_and((region != 0.).astype('bool'), mask_)
             if weight_func is not None:
                 R_val = weight_func(region[R_mask], X[:, R_mask[mask_]])
             else:
@@ -141,22 +137,20 @@ class Atlas(object):
 
         return regions
 
-    def overlaps(self):
+    def overlapping(self):
         regions = {}
 
-        A = np.rollaxis(self.A, 3)
-
-        for i, region in enumerate(A):
-            label = i + 1
-            overlaps = np.sum(A[:, region.astype('bool')], axis=1)
-            overlaps = (np.where(overlaps != 0)[0] + 1).tolist()
+        for i, region in enumerate(np.rollaxis(self.A, 3)):
+            overlaps = np.sum(self.A[region.astype('bool'), :], axis=0)
+            overlaps = (np.where(overlaps != 0)[0]).tolist()
             if overlaps != []:
-                overlaps.remove(label)
-            regions.setdefault(label, overlaps)
+                overlaps.remove(i)
+            regions.setdefault(i, overlaps)
 
         return regions
 
-    def _discard(self, labels):
+    def discard(self, *labels):
+        labels = list(labels)
         mask = np.ones(self.size, dtype='bool')
         mask[labels] = False
         self.A = self.A[..., mask]
@@ -165,42 +159,36 @@ class Atlas(object):
             label_map = {}
 
             for label in labels:
-                del self.label_map[label - 1]
+                del self.label_map[label]
+
             for i, (k, v) in enumerate(self.label_map.iteritems()):
-                if not k in np.array(labels) - 1:
-                    label_map[i + 1] = v
+                if not k in labels:
+                    label_map[i] = v
 
             self.label_map = label_map
 
-        self.mask = (self.A != self.null_label).sum(3).astype('bool')
+        self.mask = (self.A != 0.).sum(3).astype('bool')
         self.shape = self.A.shape[:-1]
         self.size = self.A.shape[-1]
 
-    def discard(self, label):
-        self._discard([label])
-
-    def _add(self, regions, names=None):
+    def update(self, regions, names=None):
         self.A = np.concatenate((self.A, regions), axis=3)
 
         if self.label_map is not None and names is not None:
             self.label_map.update(
-                dict(zip(range(self.size + 1, 
-                               self.size + 1 + len(names)), names)))
+                dict(zip(range(self.size, self.size + len(names)), names)))
 
-        self.mask = (self.A != self.null_label).sum(3).astype('bool')
+        self.mask = (self.A != 0.).sum(3).astype('bool')
         self.shape = self.A.shape[:-1]
         self.size = self.A.shape[-1]
 
     def add(self, region, name=None):
         if name is None:
-            self._add(region[..., None])
+            self.update(region[..., None])
         else:
-            self._add(region[..., None], [name])
+            self.update(region[..., None], [name])
 
     def difference(self, label1, label2, discard_operands=False):
-        label1 = label1 - 1
-        label2 = label2 - 1
-
         mask = self.A[..., label2].astype('bool')
 
         if self.A.dtype.name == 'bool':
@@ -219,51 +207,51 @@ class Atlas(object):
             self.add(diff)
                  
         if discard_operands:
-            self._discard([label1, label2])
+            self.discard(label1, label2)
 
     def union(self, label1, label2, discard_operands=False):
-        mask = np.logical_or(self.A[..., label1 - 1].astype('bool'), 
-                             self.A[..., label2 - 1].astype('bool'))
+        mask = np.logical_or(self.A[..., label1].astype('bool'), 
+                             self.A[..., label2].astype('bool'))
 
         if self.A.dtype.name == 'bool':
             union = np.zeros(self.shape, dtype='bool')
             union[mask] = True
         else:
             union = np.zeros(self.shape, dtype='float32')
-            union[mask] = self.A[mask, label1 - 1] + \
-                self.A[mask, label2 - 1]
+            union[mask] = self.A[mask, label1] + \
+                self.A[mask, label2 ]
 
         if self.label_map is not None:
-            name = '%s + %s' % (self.label_map[label1 - 1], 
-                                self.label_map[label2 - 1])
+            name = '%s + %s' % (self.label_map[label1], 
+                                self.label_map[label2])
             self.add(union, name)
         else:
             self.add(union)
                  
         if discard_operands:
-            self._discard([label1, label2])
+            self.discard(label1, label2)
 
     def intersection(self, label1, label2, discard_operands=False):
-        mask = np.logical_and(self.A[..., label1 - 1].astype('bool'), 
-                              self.A[..., label2 - 1].astype('bool'))
+        mask = np.logical_and(self.A[..., label1].astype('bool'), 
+                              self.A[..., label2].astype('bool'))
         
         if self.A.dtype.name == 'bool':
             inter = np.zeros(self.shape, dtype='bool')
             inter[mask] = True
         else:
             inter = np.zeros(self.shape, dtype='float32')
-            inter[mask] = self.A[mask, label1 - 1] + \
-                self.A[mask, label2 - 1]
+            inter[mask] = self.A[mask, label1] + \
+                self.A[mask, label2]
 
         if self.label_map is not None:
-            name = '%s = %s' % (self.label_map[label1 - 1], 
-                                self.label_map[label2 - 1])
+            name = '%s = %s' % (self.label_map[label1], 
+                                self.label_map[label2])
             self.add(inter.astype(self.A.dtype), name)
         else:
             self.add(inter.astype(self.A.dtype))
                  
         if discard_operands:
-            self._discard([label1, label2])
+            self.discard(label1, label2)
 
     def subset(self, labels):
         label_map = None
@@ -271,40 +259,37 @@ class Atlas(object):
             label_map = {}
             [label_map.setdefault(i, self.label_map[i]) for i in labels]
 
-        return self.__class__(self.A[..., np.array(labels) - 1], 
+        return self.__class__(self.A[..., labels], 
                               self.affine, 
-                              label_map, 
-                              self.null_label)
+                              label_map)
 
     def to_parcellation(self, **options):
         label_map = options.get('label_map')
-        P = np.ones(self.shape, dtype='float32') * self.null_label
+        P = np.zeros(self.shape, dtype='float32')
 
         if self.A.dtype.name != 'bool':
             threshold = options.get('threshold', .25)
             A_max = np.max(self.A, axis=3)
 
             for label in self.labels():
-                mask = np.logical_and(self.A[..., label - 1] > threshold, 
-                                      self.A[..., label - 1] == A_max)
+                mask = np.logical_and(self.A[..., label] > threshold, 
+                                      self.A[..., label] == A_max)
                 P[mask] = label
 
-            return Parcellation(P, self.affine, 
-                                label_map, self.null_label)
+            return Parcellation(P, self.affine, label_map, 0)
         else:
-            P = np.ones(self.shape, dtype='float32') * self.null_label
+            P = np.zeros(self.shape, dtype='float32')
 
             for label in self.labels():
-                R_mask = self.A[..., label - 1]
+                R_mask = self.A[..., label]
                 P[R_mask] = label
 
-            return Parcellation(P, self.affine, 
-                                label_map, self.null_label)
+            return Parcellation(P, self.affine, label_map, 0.)
 
     def show(self, label=None, rcmap=None, **options):
         if label is not None:
             color = rcmap or 'black'
-            slicer = viz.plot_map(self.A[..., label - 1],
+            slicer = viz.plot_map(self.A[..., label],
                                   self.affine, **options)
             slicer.contour_map(self.mask, self.affine, 
                                levels=[0], colors=(color, ))
@@ -315,7 +300,7 @@ class Atlas(object):
                 color = rcmap(1. * i / self.size) if rcmap is not None \
                     else pl.cm.gist_rainbow(1. * i / self.size)
                 slicer.contour_map(
-                    self.A[..., label - 1],
+                    self.A[..., label],
                     self.affine, levels=[0],
                     colors=(color, ))
             return slicer
