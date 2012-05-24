@@ -33,6 +33,10 @@ class Atlas(object):
         self.mask = (A != null_label).sum(3).astype('bool')
         self.shape = self.A.shape[:-1]
         self.size = self.A.shape[-1]
+
+        if self.A.dtype.name != 'bool':
+            self.A = self.A.astype('float32')
+
         
     def labels(self):
         return range(self.size + 1)[1:]
@@ -225,7 +229,7 @@ class Atlas(object):
             union = np.zeros(self.shape, dtype='bool')
             union[mask] = True
         else:
-            union = np.zeros(self.shape, dtype='float')
+            union = np.zeros(self.shape, dtype='float32')
             union[mask] = self.A[mask, label1 - 1] + \
                 self.A[mask, label2 - 1]
 
@@ -247,7 +251,7 @@ class Atlas(object):
             inter = np.zeros(self.shape, dtype='bool')
             inter[mask] = True
         else:
-            inter = np.zeros(self.shape, dtype='float')
+            inter = np.zeros(self.shape, dtype='float32')
             inter[mask] = self.A[mask, label1 - 1] + \
                 self.A[mask, label2 - 1]
 
@@ -274,7 +278,7 @@ class Atlas(object):
 
     def to_parcellation(self, **options):
         label_map = options.get('label_map')
-        P = np.ones(self.shape, dtype='float') * self.null_label
+        P = np.ones(self.shape, dtype='float32') * self.null_label
 
         if self.A.dtype.name != 'bool':
             threshold = options.get('threshold', .25)
@@ -288,7 +292,7 @@ class Atlas(object):
             return Parcellation(P, self.affine, 
                                 label_map, self.null_label)
         else:
-            P = np.ones(self.shape, dtype='float') * self.null_label
+            P = np.ones(self.shape, dtype='float32') * self.null_label
 
             for label in self.labels():
                 R_mask = self.A[..., label - 1]
@@ -317,7 +321,7 @@ class Atlas(object):
             return slicer
 
     def save(self, location):
-        img = nb.Nifti1Image(self.A.astype('float'), self.affine)
+        img = nb.Nifti1Image(self.A.astype('float32'), self.affine)
         nb.save(img, location)
 
 
