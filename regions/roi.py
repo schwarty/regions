@@ -20,12 +20,15 @@ def resample(source, target, interpolation='continuous'):
 
     return resampled_image.get_data()
 
+def atlas_mean(R_voxels, weights):
+    return np.mean(np.multiply(R_voxels, weights), axis=1)
+
 
 class Atlas(object):
 
     def __init__(self, A, affine, label_map=None):
-        self.A = A
-        self.affine = affine
+        self.A = np.copy(A)
+        self.affine = affine.astype('float32')
         self.label_map = label_map
         if len(A.shape) == 3:   # single region in atlas
             self.A = A[..., None]
@@ -44,30 +47,27 @@ class Atlas(object):
             return self.labels()
         return self.label_map.values()
 
-    def transform(self, X, affine, mask, 
-                  pooling_func=np.mean, weight_func=np.multiply):
+    def transform(self, X, affine, mask, pooling_func=atlas_mean):
 
         not_nan = ~np.any(np.isnan(X), 0) # deal with nans
         X = X[:, not_nan]
         mask_ = np.zeros(mask.shape, dtype='bool')
         mask_[mask] = mask[mask] == not_nan
 
-        if self.A.dtype.name == 'bool':
-            A = resample((self.A, self.affine), (mask, affine), 'nearest')
-        else:
-            A = resample((self.A, self.affine), (mask, affine))
+        A = resample((self.A, self.affine), (mask, affine), 'nearest')
+
+
+        # if self.A.dtype.name == 'bool':
+        #     A = resample((self.A, self.affine), (mask, affine), 'nearest')
+        # else:
+        #     A = resample((self.A, self.affine), (mask, affine))
         A = np.rollaxis(A, 3)
         
         nX = np.zeros((X.shape[0], self.size))
 
         for i, region in enumerate(A):
             R_mask = np.logical_and((region != 0.).astype('bool'), mask_)
-            if weight_func is not None:
-                R_val = weight_func(region[R_mask], X[:, R_mask[mask_]])
-            else:
-                R_val = X[:, R_mask[mask_]]
-
-            nX[:, i] =+ pooling_func(R_val, axis=1)
+            nX[:, i] =+ pooling_func(X[:, R_mask[mask_]], region[R_mask])
 
         self.A_ = A
         self.mask_ = mask_
@@ -85,22 +85,19 @@ class Atlas(object):
 
         return nX
 
-    def project(self, X, affine, mask,
-                pooling_func=np.mean, weight_func=np.multiply):
-
-        nX = self.transform(X, affine, mask, pooling_func, weight_func)
+    def project(self, X, affine, mask, pooling_func=atlas_mean):
+        nX = self.transform(X, affine, mask, pooling_func)
         return self.inverse_transform(nX)
 
     def project_array(self, array, affine, mask=None, 
-                      pooling_func=np.mean, weight_func=np.multiply):
+                      pooling_func=atlas_mean):
         if mask is None:
             if np.any(np.isnan(array)):
                 mask = array != np.nan
             else:
                 mask = array != 0
 
-        X = self.project(array[mask][None, :],
-                         affine, mask, pooling_func, weight_func)
+        X = self.project(array[mask][None, :], affine, mask, pooling_func)
 
         new_array = np.zeros(self.mask_.shape)
         new_array[self.mask_] = X[0, :]
@@ -320,8 +317,8 @@ class Atlas(object):
 class Parcellation(object):
 
     def __init__(self, P, affine, label_map=None, null_label=0):
-        self.P = P
-        self.affine = affine
+        self.P = P.astype('float32')
+        self.affine = affine.astype('float32')
         self.null_label = null_label
         self.label_map = label_map
         self.mask = (P != null_label).astype('bool')
@@ -344,14 +341,14 @@ class Parcellation(object):
 
         P = resample((self.P, self.affine), (mask, affine), 'nearest')
         nX = np.zeros((X.shape[0], self.size))
-        
-        for i, label in enumerate(self.labels()):
-            R_mask = np.logical_and(P == label, mask_)
-            nX[:, i] = pooling_func(X[:, R_mask[mask_]], axis=1)
 
         self.P_ = P
         self.mask_ = mask_
         self.affine_ = affine
+        
+        for i, label in enumerate(self.labels()):
+            R_mask = np.logical_and(P == label, mask_)
+            nX[:, i] = pooling_func(X[:, R_mask[mask_]], axis=1)
 
         return nX
 
@@ -443,6 +440,8 @@ class Parcellation(object):
         return Atlas(A, self.affine, label_map)
 
     def show(self, label=None, rcmap=None, **options):
+        self.P = np.copy(self.P)
+
         if label is None:
             return viz.plot_map(self.P, self.affine, **options)
         else:
