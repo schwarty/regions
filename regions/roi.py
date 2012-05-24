@@ -52,7 +52,10 @@ class Atlas(object):
         mask_ = np.zeros(mask.shape, dtype='bool')
         mask_[mask] = mask[mask] == not_nan
 
-        A = resample((self.A, self.affine), (mask, affine), 'nearest')
+        if self.A.dtype.name == 'bool':
+            A = resample((self.A, self.affine), (mask, affine), 'nearest')
+        else:
+            A = resample((self.A, self.affine), (mask, affine))
         A = np.rollaxis(A, 3)
         
         nX = np.zeros((X.shape[0], self.size))
@@ -82,7 +85,7 @@ class Atlas(object):
 
         return nX
 
-    def project(self, X, affine, mask, 
+    def project(self, X, affine, mask,
                 pooling_func=np.mean, weight_func=np.multiply):
 
         nX = self.transform(X, affine, mask, pooling_func, weight_func)
@@ -110,7 +113,11 @@ class Atlas(object):
         mask_ = np.zeros(mask.shape, dtype='bool')
         mask_[mask] = mask[mask] == not_nan
 
-        A = resample((self.A, self.affine), (mask, affine), 'nearest')
+        if self.A.dtype.name == 'bool':
+            A = resample((self.A, self.affine), (mask, affine), 'nearest')
+        else:
+            A = resample((self.A, self.affine), (mask, affine))
+
         A = np.rollaxis(A, 3)
 
         self.A_ = A
@@ -433,7 +440,7 @@ class Parcellation(object):
 
             A = np.concatenate((A, parc.to_atlas().A), axis=3)
 
-        return Atlas(A, self.affine, label_map, null_label=0)
+        return Atlas(A, self.affine, label_map)
 
     def show(self, label=None, rcmap=None, **options):
         if label is None:
