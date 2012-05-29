@@ -27,7 +27,7 @@ def atlas_mean(R_voxels, weights):
 class Atlas(object):
 
     def __init__(self, A, affine, label_map=None):
-        self.A = np.copy(A)
+        self.A = A
         self.affine = affine.astype('float32')
         self.label_map = label_map
         if len(A.shape) == 3:   # single region in atlas
@@ -48,19 +48,12 @@ class Atlas(object):
         return self.label_map.values()
 
     def transform(self, X, affine, mask, pooling_func=atlas_mean):
-
         not_nan = ~np.any(np.isnan(X), 0) # deal with nans
         X = X[:, not_nan]
         mask_ = np.zeros(mask.shape, dtype='bool')
         mask_[mask] = mask[mask] == not_nan
 
         A = resample((self.A, self.affine), (mask, affine), 'nearest')
-
-
-        # if self.A.dtype.name == 'bool':
-        #     A = resample((self.A, self.affine), (mask, affine), 'nearest')
-        # else:
-        #     A = resample((self.A, self.affine), (mask, affine))
         A = np.rollaxis(A, 3)
         
         nX = np.zeros((X.shape[0], self.size))
@@ -291,6 +284,7 @@ class Atlas(object):
             return Parcellation(P, self.affine, label_map, 0.)
 
     def show(self, label=None, rcmap=None, **options):
+        self.A = np.array(self.A)
         if label is not None:
             color = rcmap or 'black'
             slicer = viz.plot_map(self.A[..., label],
@@ -440,8 +434,7 @@ class Parcellation(object):
         return Atlas(A, self.affine, label_map)
 
     def show(self, label=None, rcmap=None, **options):
-        self.P = np.copy(self.P)
-
+        self.P = np.array(self.P)
         if label is None:
             return viz.plot_map(self.P, self.affine, **options)
         else:
