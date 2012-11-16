@@ -7,8 +7,8 @@ import numpy as np
 from regions import Atlas
 
 
-_atlases = os.path.join(os.path.abspath(__file__).rsplit('/', 1)[0], 
-                        'atlases')
+_atlases = os.path.join(os.path.abspath(__file__).rsplit('/', 1)[0], 'atlases')
+
 
 def harvard_oxford_atlas(name='cort', res='2mm'):
     sub = '%s/HarvardOxford-sub-prob-%s.nii.gz' % (_atlases, res)
@@ -22,8 +22,8 @@ def harvard_oxford_atlas(name='cort', res='2mm'):
         for label in etree.parse(cort_map).findall('.//label'):
             label_map[int(label.get('index'))] = label.text
 
-        A  = nb.load(cort)
-        
+        A = nb.load(cort)
+
     elif name == 'sub':
         for label in etree.parse(sub_map).findall('.//label'):
             label_map[int(label.get('index'))] = label.text
@@ -32,9 +32,10 @@ def harvard_oxford_atlas(name='cort', res='2mm'):
 
     return Atlas(A.get_data() / 100., A.get_affine(), label_map)
 
+
 def mni_atlas(res='2mm'):
     path = '%s/MNI-prob-%s.nii.gz' % (_atlases, res)
-    
+
     label_map = {}
 
     for label in etree.parse('%s/MNI.xml' % _atlases).findall('.//label'):
@@ -43,6 +44,7 @@ def mni_atlas(res='2mm'):
     A = nb.load(path)
 
     return Atlas(A.get_data() / 100., A.get_affine(), label_map)
+
 
 def juelich_atlas(res='2mm'):
     path = '%s/Juelich-prob-%s.nii.gz' % (_atlases, res)

@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import numpy as np
 import pylab as pl
 import nibabel as nb
@@ -6,7 +8,7 @@ import nipy.labs.viz as viz
 from nipy.labs.datasets import VolumeImg
 
 
-def resample(source, target, interpolation='continuous'):
+def resample(source, target, interpolation='continuous', return_affine=False):
     source, source_affine = source
     target, target_affine = target
 
@@ -18,7 +20,11 @@ def resample(source, target, interpolation='continuous'):
 
     resampled_image = input_image.as_volume_img(target_affine, target.shape)
 
-    return resampled_image.get_data()
+    if return_affine:
+        return resampled_image.get_data(), resampled_image.get_affine()
+    else:
+        return resampled_image.get_data()
+
 
 def atlas_mean(R_voxels, weights):
     return np.mean(np.multiply(R_voxels, weights), axis=1)
@@ -39,6 +45,19 @@ class Atlas(object):
         if self.A.dtype.name != 'bool':
             self.A = self.A.astype('float32')
 
+    def resample(self, voxels_size):
+        affine_3x3 = np.array([[-1., 0, 0],
+                               [0, 1, 0],
+                               [0, 0, 1]]) * voxels_size
+        fake_volume = namedtuple('Volume', ['shape'])(None)
+
+        self.A, self.affine = resample((self.A, self.affine),
+                                       (fake_volume, affine_3x3),
+                                       'nearest', True)
+
+        self.shape = self.A.shape[:-1]
+        self.mask = (self.A != 0.).sum(3).astype('bool')
+
     def labels(self):
         return range(self.size)
 
@@ -48,19 +67,19 @@ class Atlas(object):
         return self.label_map.values()
 
     def transform(self, X, affine, mask, pooling_func=atlas_mean):
-        not_nan = ~np.any(np.isnan(X), 0) # deal with nans
+        not_nan = ~np.any(np.isnan(X), 0)  # deal with nans
         X = X[:, not_nan]
         mask_ = np.zeros(mask.shape, dtype='bool')
         mask_[mask] = mask[mask] == not_nan
 
         A = resample((self.A, self.affine), (mask, affine), 'nearest')
         A = np.rollaxis(A, 3)
-        
+
         nX = np.zeros((X.shape[0], self.size))
 
         for i, region in enumerate(A):
             R_mask = np.logical_and((region != 0.).astype('bool'), mask_)
-            nX[:, i] =+ pooling_func(X[:, R_mask[mask_]], region[R_mask])
+            nX[:, i] += pooling_func(X[:, R_mask[mask_]], region[R_mask])
 
         self.A_ = A
         self.mask_ = mask_
@@ -82,7 +101,7 @@ class Atlas(object):
         nX = self.transform(X, affine, mask, pooling_func)
         return self.inverse_transform(nX)
 
-    def project_array(self, array, affine, mask=None, 
+    def project_array(self, array, affine, mask=None,
                       pooling_func=atlas_mean):
         if mask is None:
             if np.any(np.isnan(array)):
@@ -98,7 +117,7 @@ class Atlas(object):
         return new_array
 
     def iter_extract(self, X, affine, mask, weight_func=np.multiply):
-        not_nan = ~np.any(np.isnan(X), 0) # deal with nans
+        not_nan = ~np.any(np.isnan(X), 0)  # deal with nans
         X = X[:, not_nan]
         mask_ = np.zeros(mask.shape, dtype='bool')
         mask_[mask] = mask[mask] == not_nan
@@ -119,6 +138,7 @@ class Atlas(object):
             R_val = np.zeros((X.shape[0], region.size))
 
             R_mask = np.logical_and((region != 0.).astype('bool'), mask_)
+            self.R_mask_ = R_mask
             if weight_func is not None:
                 R_val = weight_func(region[R_mask], X[:, R_mask[mask_]])
             else:
@@ -197,17 +217,17 @@ class Atlas(object):
             diff[diff < 0] = 0
 
         if self.label_map is not None:
-            name = '%s - %s' % (self.label_map[label1], 
+            name = '%s - %s' % (self.label_map[label1],
                                 self.label_map[label2])
             self.add(diff, name)
         else:
             self.add(diff)
-                 
+
         if discard_operands:
             self.discard(label1, label2)
 
     def union(self, label1, label2, discard_operands=False):
-        mask = np.logical_or(self.A[..., label1].astype('bool'), 
+        mask = np.logical_or(self.A[..., label1].astype('bool'),
                              self.A[..., label2].astype('bool'))
 
         if self.A.dtype.name == 'bool':
@@ -216,22 +236,22 @@ class Atlas(object):
         else:
             union = np.zeros(self.shape, dtype='float32')
             union[mask] = self.A[mask, label1] + \
-                self.A[mask, label2 ]
+                self.A[mask, label2]
 
         if self.label_map is not None:
-            name = '%s + %s' % (self.label_map[label1], 
+            name = '%s + %s' % (self.label_map[label1],
                                 self.label_map[label2])
             self.add(union, name)
         else:
             self.add(union)
-                 
+
         if discard_operands:
             self.discard(label1, label2)
 
     def intersection(self, label1, label2, discard_operands=False):
-        mask = np.logical_and(self.A[..., label1].astype('bool'), 
+        mask = np.logical_and(self.A[..., label1].astype('bool'),
                               self.A[..., label2].astype('bool'))
-        
+
         if self.A.dtype.name == 'bool':
             inter = np.zeros(self.shape, dtype='bool')
             inter[mask] = True
@@ -241,12 +261,12 @@ class Atlas(object):
                 self.A[mask, label2]
 
         if self.label_map is not None:
-            name = '%s = %s' % (self.label_map[label1], 
+            name = '%s = %s' % (self.label_map[label1],
                                 self.label_map[label2])
             self.add(inter.astype(self.A.dtype), name)
         else:
             self.add(inter.astype(self.A.dtype))
-                 
+
         if discard_operands:
             self.discard(label1, label2)
 
@@ -256,8 +276,8 @@ class Atlas(object):
             label_map = {}
             [label_map.setdefault(i, self.label_map[i]) for i in labels]
 
-        return self.__class__(self.A[..., labels], 
-                              self.affine, 
+        return self.__class__(self.A[..., labels],
+                              self.affine,
                               label_map)
 
     def to_parcellation(self, **options):
@@ -269,7 +289,7 @@ class Atlas(object):
             A_max = np.max(self.A, axis=3)
 
             for label in self.labels():
-                mask = np.logical_and(self.A[..., label] > threshold, 
+                mask = np.logical_and(self.A[..., label] > threshold,
                                       self.A[..., label] == A_max)
                 P[mask] = label
 
@@ -289,7 +309,7 @@ class Atlas(object):
             color = rcmap or 'black'
             slicer = viz.plot_map(self.A[..., label],
                                   self.affine, **options)
-            slicer.contour_map(self.mask, self.affine, 
+            slicer.contour_map(self.mask, self.affine,
                                levels=[0], colors=(color, ))
             return slicer
         else:
@@ -308,6 +328,15 @@ class Atlas(object):
         nb.save(img, location)
 
 
+def check_float_approximation(P, mask):
+    lmap = {}
+    for label in np.unique(P[mask]):
+        lmap[label] = np.round(label)
+
+    for label in lmap:
+        P[P == label] = lmap[label]
+
+
 class Parcellation(object):
 
     def __init__(self, P, affine, label_map=None, null_label=0):
@@ -318,7 +347,8 @@ class Parcellation(object):
         self.mask = (P != null_label).astype('bool')
         self.shape = P.shape
         self.size = np.unique(P[self.mask]).size
-        
+        check_float_approximation(self.P, self.mask)
+
     def labels(self):
         return np.unique(self.P[self.mask]).astype('int').tolist()
 
@@ -328,10 +358,11 @@ class Parcellation(object):
         return self.label_map.values()
 
     def transform(self, X, affine, mask, pooling_func=np.mean):
-        not_nan = ~np.any(np.isnan(X), 0) # deal with nans
-        X = X[:, not_nan]
-        mask_ = np.zeros(mask.shape, dtype='bool')
-        mask_[mask] = mask[mask] == not_nan
+        # not_nan = ~np.any(np.isnan(X), 0) # deal with nans
+        # X = X[:, not_nan]
+        # mask_ = np.zeros(mask.shape, dtype='bool')
+        # mask_[mask] = mask[mask] == not_nan
+        mask_ = mask
 
         P = resample((self.P, self.affine), (mask, affine), 'nearest')
         nX = np.zeros((X.shape[0], self.size))
@@ -339,7 +370,7 @@ class Parcellation(object):
         self.P_ = P
         self.mask_ = mask_
         self.affine_ = affine
-        
+
         for i, label in enumerate(self.labels()):
             R_mask = np.logical_and(P == label, mask_)
             nX[:, i] = pooling_func(X[:, R_mask[mask_]], axis=1)
@@ -356,24 +387,28 @@ class Parcellation(object):
         return nX
 
     def iter_extract(self, X, affine, mask):
-        not_nan = ~np.any(np.isnan(X), 0) # deal with nans
-        X = X[:, not_nan]
-        mask_ = np.zeros(mask.shape, dtype='bool')
-        mask_[mask] = mask[mask] == not_nan
+        # not_nan = ~np.any(np.isnan(X), 0) # deal with nans
+        # X = X[:, not_nan]
+        # mask_ = np.zeros(mask.shape, dtype='bool')
+        # mask_[mask] = mask[mask] == not_nan
+        mask_ = mask
 
         P = resample((self.P, self.affine), (mask, affine), 'nearest')
-        
+
         for i, label in enumerate(self.labels()):
-            R_mask = np.logical_and(P == label, mask_)
-            yield label, X[:, R_mask[mask_]]
+            self.R_mask_ = np.logical_and(P == label, mask_)
+            yield label, X[:, self.R_mask_[mask_]]
 
-    def extract(self, X, affine, mask):
-        regions = {}
+    def extract(self, X):
+        return X[:, self.R_mask_[self.R_mask_]]
 
-        for label, R_val in self.iter_extract(X, affine, mask):
-            regions.setdefault(label, R_val)
+    # def extract(self, X, affine, mask):
+    #     regions = {}
 
-        return regions
+    #     for label, R_val in self.iter_extract(X, affine, mask):
+    #         regions.setdefault(label, R_val)
+
+    #     return regions
 
     def project(self, X, affine, mask, pooling_func=np.mean):
         nX = self.transform(X, affine, mask, pooling_func)
@@ -405,7 +440,7 @@ class Parcellation(object):
 
     def subset(self, labels):
         P = np.ones(self.P.size) * self.null_label
-        ind = np.where(np.in1d(self.P, labels))[0]        
+        ind = np.where(np.in1d(self.P, labels))[0]
         P[ind] = self.P.ravel()[ind]
         return self.__class__(
             P.reshape(self.shape), self.affine, self.null_label)
@@ -426,7 +461,7 @@ class Parcellation(object):
 
         for parc in parcellations:
             if parc.shape != self.shape:
-                parc.P = resample((parc.P, parc.affine), 
+                parc.P = resample((parc.P, parc.affine),
                                   (self.P, self.affine), 'nearest')
 
             A = np.concatenate((A, parc.to_atlas().A), axis=3)
@@ -441,7 +476,7 @@ class Parcellation(object):
             color = rcmap or 'black'
             slicer = viz.plot_map(self.P == label,
                                   self.affine, **options)
-            slicer.contour_map(self.mask, self.affine, 
+            slicer.contour_map(self.mask, self.affine,
                                levels=[0], colors=(color, ))
             return slicer
 
