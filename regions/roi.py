@@ -67,22 +67,17 @@ class Atlas(object):
         return self.label_map.values()
 
     def transform(self, X, affine, mask, pooling_func=atlas_mean):
-        not_nan = ~np.any(np.isnan(X), 0)  # deal with nans
-        X = X[:, not_nan]
-        mask_ = np.zeros(mask.shape, dtype='bool')
-        mask_[mask] = mask[mask] == not_nan
-
         A = resample((self.A, self.affine), (mask, affine), 'nearest')
         A = np.rollaxis(A, 3)
 
         nX = np.zeros((X.shape[0], self.size))
 
         for i, region in enumerate(A):
-            R_mask = np.logical_and((region != 0.).astype('bool'), mask_)
-            nX[:, i] += pooling_func(X[:, R_mask[mask_]], region[R_mask])
+            R_mask = np.logical_and((region != 0.).astype('bool'), mask)
+            nX[:, i] += pooling_func(X[:, R_mask[mask]], region[R_mask])
 
         self.A_ = A
-        self.mask_ = mask_
+        self.mask_ = mask
         self.affine_ = affine
 
         return nX
@@ -117,11 +112,6 @@ class Atlas(object):
         return new_array
 
     def iter_extract(self, X, affine, mask, weight_func=np.multiply):
-        not_nan = ~np.any(np.isnan(X), 0)  # deal with nans
-        X = X[:, not_nan]
-        mask_ = np.zeros(mask.shape, dtype='bool')
-        mask_[mask] = mask[mask] == not_nan
-
         if self.A.dtype.name == 'bool':
             A = resample((self.A, self.affine), (mask, affine), 'nearest')
         else:
@@ -130,19 +120,19 @@ class Atlas(object):
         A = np.rollaxis(A, 3)
 
         self.A_ = A
-        self.mask_ = mask_
+        self.mask_ = mask
         self.affine_ = affine
 
         for i, region in enumerate(A):
             label = i + 1
             R_val = np.zeros((X.shape[0], region.size))
 
-            R_mask = np.logical_and((region != 0.).astype('bool'), mask_)
+            R_mask = np.logical_and((region != 0.).astype('bool'), mask)
             self.R_mask_ = R_mask
             if weight_func is not None:
-                R_val = weight_func(region[R_mask], X[:, R_mask[mask_]])
+                R_val = weight_func(region[R_mask], X[:, R_mask[mask]])
             else:
-                R_val = X[:, R_mask[mask_]]
+                R_val = X[:, R_mask[mask]]
 
             yield label, R_val
 
@@ -358,22 +348,16 @@ class Parcellation(object):
         return self.label_map.values()
 
     def transform(self, X, affine, mask, pooling_func=np.mean):
-        # not_nan = ~np.any(np.isnan(X), 0) # deal with nans
-        # X = X[:, not_nan]
-        # mask_ = np.zeros(mask.shape, dtype='bool')
-        # mask_[mask] = mask[mask] == not_nan
-        mask_ = mask
-
         P = resample((self.P, self.affine), (mask, affine), 'nearest')
         nX = np.zeros((X.shape[0], self.size))
 
         self.P_ = P
-        self.mask_ = mask_
+        self.mask_ = mask
         self.affine_ = affine
 
         for i, label in enumerate(self.labels()):
-            R_mask = np.logical_and(P == label, mask_)
-            nX[:, i] = pooling_func(X[:, R_mask[mask_]], axis=1)
+            R_mask = np.logical_and(P == label, mask)
+            nX[:, i] = pooling_func(X[:, R_mask[mask]], axis=1)
 
         return nX
 
@@ -387,28 +371,19 @@ class Parcellation(object):
         return nX
 
     def iter_extract(self, X, affine, mask):
-        # not_nan = ~np.any(np.isnan(X), 0) # deal with nans
-        # X = X[:, not_nan]
-        # mask_ = np.zeros(mask.shape, dtype='bool')
-        # mask_[mask] = mask[mask] == not_nan
-        mask_ = mask
-
         P = resample((self.P, self.affine), (mask, affine), 'nearest')
 
         for i, label in enumerate(self.labels()):
-            self.R_mask_ = np.logical_and(P == label, mask_)
-            yield label, X[:, self.R_mask_[mask_]]
+            self.R_mask_ = np.logical_and(P == label, mask)
+            yield label, X[:, self.R_mask_[mask]]
 
-    def extract(self, X):
-        return X[:, self.R_mask_[self.R_mask_]]
+    def extract(self, X, affine, mask):
+        regions = {}
 
-    # def extract(self, X, affine, mask):
-    #     regions = {}
+        for label, R_val in self.iter_extract(X, affine, mask):
+            regions.setdefault(label, R_val)
 
-    #     for label, R_val in self.iter_extract(X, affine, mask):
-    #         regions.setdefault(label, R_val)
-
-    #     return regions
+        return regions
 
     def project(self, X, affine, mask, pooling_func=np.mean):
         nX = self.transform(X, affine, mask, pooling_func)
