@@ -338,39 +338,31 @@ class Parcellation(object):
             nX[:, self.r_masks_[i]] = X[:, i, np.newaxis]
         return nX
 
-    def iter_extract(self, X, affine, mask):
-        P = resample((self.P, self.affine), (mask, affine), 'nearest')
+    def iter_extract(self, X):
+        for label, r_mask in zip(self.labels(), self.r_masks_):
+            yield label, X[:, self.r_masks]
 
-        for i, label in enumerate(self.labels()):
-            self.R_mask_ = np.logical_and(P == label, mask)
-            yield label, X[:, self.R_mask_[mask]]
+    def extract(self, X):
+        return dict(self.iter_extract(X))
 
-    def extract(self, X, affine, mask):
-        regions = {}
+    def apply(self, X, pooling_func=np.mean):
+        is_array = False
+        if len(X.shape) == 3:
+            is_array = True
 
-        for label, R_val in self.iter_extract(X, affine, mask):
-            regions.setdefault(label, R_val)
+        if is_array:
+            nX = self.transform(X[self.mask_][np.newaxis, :], pooling_func)
+        else:
+            nX = self.transform(X, pooling_func)
 
-        return regions
+        nX = self.inverse_transform(nX)
 
-    def project(self, X, affine, mask, pooling_func=np.mean):
-        nX = self.transform(X, affine, mask, pooling_func)
-        return self.inverse_transform(nX)
-
-    def project_array(self, array, affine, mask=None, pooling_func=np.mean):
-        if mask is None:
-            if np.any(np.isnan(array)):
-                mask = array != np.nan
-            else:
-                mask = array != self.null_label
-
-        X = self.transform(array[mask][None, :], affine, mask, pooling_func)
-        nX = self.inverse_transform(X)
-
-        new_array = np.zeros(self.mask_.shape)
-        new_array[self.mask_] = nX[0, :]
-
-        return new_array
+        if is_array:
+            new_array = np.zeros(self.mask_.shape)
+            new_array[self.mask_] = nX[0, :]
+            return new_array
+        else:
+            return nX
 
     def union(self, label1, label2):
         self.P[self.P == label1] = label2
