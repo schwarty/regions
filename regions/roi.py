@@ -317,7 +317,7 @@ class Parcellation(object):
             return self.labels()
         return self.label_map.values()
 
-    def fit(self, affine, mask):
+    def fit(self, mask, affine):
         P = resample((self.P, self.affine), (mask, affine), 'nearest')
         self.P_ = P
         self.mask_ = mask
