@@ -317,17 +317,18 @@ class Parcellation(object):
             return self.labels()
         return self.label_map.values()
 
-    def transform(self, X, affine, mask, pooling_func=np.mean):
+    def fit(self, affine, mask):
         P = resample((self.P, self.affine), (mask, affine), 'nearest')
-        nX = np.zeros((X.shape[0], self.size))
-
         self.P_ = P
         self.mask_ = mask
         self.affine_ = affine
 
+    def transform(self, X, pooling_func=np.mean):
+        nX = np.zeros((X.shape[0], self.size))
+
         for i, label in enumerate(self.labels()):
-            R_mask = np.logical_and(P == label, mask)
-            nX[:, i] = pooling_func(X[:, R_mask[mask]], axis=1)
+            R_mask = np.logical_and(self.P_ == label, self.mask_)
+            nX[:, i] = pooling_func(X[:, R_mask[self.mask]], axis=1)
 
         return nX
 
