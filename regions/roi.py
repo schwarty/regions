@@ -322,23 +322,20 @@ class Parcellation(object):
         self.P_ = P
         self.mask_ = mask
         self.affine_ = affine
+        self.r_masks_ = [
+            np.logical_and(self.P_ == label, self.mask_)[self.mask_]
+            for label in self.labels()]
 
     def transform(self, X, pooling_func=np.mean):
         nX = np.zeros((X.shape[0], self.size))
-
-        for i, label in enumerate(self.labels()):
-            R_mask = np.logical_and(self.P_ == label, self.mask_)
-            nX[:, i] = pooling_func(X[:, R_mask[self.mask]], axis=1)
-
+        for i, (r_mask, label) in enumerate(zip(self.r_masks_, self.labels())):
+            nX[:, i] = pooling_func(X[:, r_mask], axis=1)
         return nX
 
     def inverse_transform(self, X):
         nX = np.zeros((X.shape[0], self.mask_.sum()), dtype=X.dtype)
-
-        for i, label in enumerate(self.labels()):
-            R_mask = np.logical_and(self.P_ == label, self.mask_)
-            nX[:, R_mask[self.mask_]] = X[:, i, None]
-
+        for i in range(len(self.r_masks_)):
+            nX[:, self.r_masks_[i]] = X[:, i, np.newaxis]
         return nX
 
     def iter_extract(self, X, affine, mask):
