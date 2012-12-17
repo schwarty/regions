@@ -246,7 +246,7 @@ class Atlas(object):
                 mask = np.logical_and(
                     self.label_image[..., label] > threshold,
                     self.label_image[..., label] == label_image_max)
-                parc_image[mask] = label
+                parc_image[mask] = label + 1
 
             return Parcellation(parc_image, self.affine, label_map, 0)
         else:
@@ -254,7 +254,7 @@ class Atlas(object):
 
             for label in self.labels():
                 R_mask = self.label_image[..., label]
-                parc_image[R_mask] = label
+                parc_image[R_mask] = label + 1
 
             return Parcellation(parc_image, self.affine, label_map, 0.)
 
