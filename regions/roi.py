@@ -138,7 +138,7 @@ class Atlas(object):
 
             self.label_map = label_map
 
-        self.mask = (self.label_image != 0.).sum(3).astype('bool')
+        self.mask = (self.label_image != self.null_label).sum(3).astype('bool')
         self.shape = self.label_image.shape[:-1]
         self.size = self.label_image.shape[-1]
 
@@ -155,9 +155,9 @@ class Atlas(object):
 
     def add(self, region, name=None):
         if name is None:
-            self.update(region[..., None])
+            self.update(region)
         else:
-            self.update(region[..., None], [name])
+            self.update(region, [name])
 
     def difference(self, label1, label2, discard_operands=False):
         mask = self.label_image[..., label2].astype('bool')
