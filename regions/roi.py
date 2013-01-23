@@ -138,7 +138,7 @@ class Atlas(object):
 
             self.label_map = label_map
 
-        self.mask = (self.label_image != self.null_label).sum(3).astype('bool')
+        self.mask = (self.label_image != 0.).sum(3).astype('bool')
         self.shape = self.label_image.shape[:-1]
         self.size = self.label_image.shape[-1]
 
