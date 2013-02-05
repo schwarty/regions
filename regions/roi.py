@@ -155,9 +155,9 @@ class Atlas(object):
 
     def add(self, region, name=None):
         if name is None:
-            self.update(region[..., None])
+            self.update(region)
         else:
-            self.update(region[..., None], [name])
+            self.update(region, [name])
 
     def difference(self, label1, label2, discard_operands=False):
         mask = self.label_image[..., label2].astype('bool')
